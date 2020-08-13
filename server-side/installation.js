@@ -196,7 +196,11 @@ async function InstallMonitor(Client, papiClient){
         TableID:"PepperiMonitor",
         MainKeyType: {ID:0, Name:"Any"},
         SecondaryKeyType:{ID:0,Name:"Any"},
-        Hidden : false
+        Hidden : false,
+        Owner: {
+            UUID: papiClient.AddonUUID
+          },
+
     };
     const resultAddTable = await papiClient.metaData.userDefinedTables.upsert(mapDataMetaData);
     const mapData ={
