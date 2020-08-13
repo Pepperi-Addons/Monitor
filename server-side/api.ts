@@ -18,7 +18,8 @@ const errors = {
     "GET-UDT-FAILED":{"Message":'Get udt failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "PUT-UPDATE-FAILED":{"Message":'Put status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-UPDATE-FAILED":{"Message":'Sync status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
-    "SYNC-FAILED":{"Message":'Sync response status is Failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"}
+    "SYNC-FAILED":{"Message":'Sync response status is Failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
+    "PASSED-ADDON-LIMIT":{"Message":'Distributor passed the addon limit', "Color":"FF0000"}
 };
 
 export async function monitor(client: Client, request: Request) {
@@ -175,20 +176,50 @@ export async function monitorSync(service) {
     }
 };
 
-// this function will run on api/js_foo endpoint
-// note that the code here is running from a javascript file
-export async function js_foo(client: Client, request: Request) {
-    return JavascriptService.js_foo(client, request);
-}
+export async function check_addons_execution_limit(client, request) {
+    try {
+        var resultItems = { PassedItems: new Array(), NotPassedItems: new Array() };
+        const service = new MyService(client);
+        const result = await service.papiClient.post(`/addons/code_jobs_limits`);
+        if(result != null && Object.keys(result).length > 0){
+            for (var item in result) {
+                if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == true){
+                    reportError(getDistributorID(service), 'PASSED-ADDON-LIMIT', item);
+                    resultItems["PassedItems"].push(item);
+                }
+                else if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == false){
+                    resultItems["NotPassedItems"].push(item);
+                }
+            }
+        }
+        return {
+            success:true, 
+            resultObject:resultItems
+        };
+    }
+    catch (err) {
+        return {
+            Success: false,
+            ErrorMessage: ('message' in err) ? err.message : 'Unknown Error Occured',
+        }
+    }
+};
 
-async function reportErrorLog(distributorID, errorCode) {
-    const error = 'DistributorID: '+distributorID+'\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"];
+async function reportErrorLog(distributorID, errorCode, addonUUID = "") {
+    let error = "";
+    if(addonUUID != null && addonUUID != ""){
+        error = 'DistributorID: '+distributorID+'\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"];
+    }
+    else{
+        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"];
+    }
+
     console.error(error);
     return error;
 }
 
-async function reportError(distributorID, errorCode) {
-    const errorMessage = reportErrorLog(distributorID, errorCode)
+async function reportError(distributorID, errorCode , addonUUID = "") {
+    const errorMessage = reportErrorLog(distributorID, errorCode, addonUUID)
     const body = {
         themeColor:errors[errorCode]["Color"],
         Text: 'DistributorID: '+distributorID+'\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"],
