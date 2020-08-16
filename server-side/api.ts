@@ -19,17 +19,24 @@ const errors = {
     "PUT-UPDATE-FAILED":{"Message":'Put status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-UPDATE-FAILED":{"Message":'Sync status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-FAILED":{"Message":'Sync response status is Failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
-    "PASSED-ADDON-LIMIT":{"Message":'Distributor passed the addon limit', "Color":"FF0000"}
+    "PASSED-ADDON-LIMIT":{"Message":'Distributor passed the addon limit', "Color":"FF0000"},
+    "TIMEOUT":{"Message":'monitorPut function timeout', "Color":"FF0000"}
 };
 
 export async function monitor(client: Client, request: Request) {
     console.log('MonitorAddon start monitor function');
+    
     const service = new MyService(client);
     let errorCode = '';
     let success = false;
     let errorMessage ='';
-    
+    let timeout;
+
     try {
+
+        timeout = setTimeout(async function() { 
+            await statusUpdate(service, false, false, 'TIMEOUT');},90000);
+
         errorCode = await monitorPut(service);
         const lastStatus = await getCodeJobLastStatus(service);
 
@@ -37,19 +44,15 @@ export async function monitor(client: Client, request: Request) {
             success = true;
         }
 
-        const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
-        if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
-            errorMessage = await reportError(getDistributorID(service), errorCode);
-            await updateInstalledAddons(service, success);
-        }
-        else{
-            errorMessage = await reportErrorLog(getDistributorID(service), errorCode);
-        }
+        errorMessage = await statusUpdate(service, lastStatus, success, errorCode);
     }
     catch (err) {
         const error = ('message' in err) ? err.message : 'Unknown Error Occured';
         errorMessage = await reportError(getDistributorID(service), 'UNKNOWN-ERROR');
         success=false;
+    }
+    finally{
+        clearTimeout(timeout);
     }
     return {
         success: success,
@@ -63,7 +66,7 @@ export async function monitorPut(service) {
     let object;
     try{
         console.log('MonitorAddon, monitorPut start first Get udt');
-        result = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
+        result = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor' AND MainKey='MonitorSyncCounter'" }).toArray();
         object = result[0];
     }
     catch (error){
@@ -98,7 +101,7 @@ export async function monitorPut(service) {
     catch (err) { }
 
     console.log('MonitorAddon, monitorPut start second Get udt');
-    const response = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
+    const response = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor' AND MainKey='MonitorSyncCounter'" }).toArray();
     if (response[0].Values[0] == count) {
         return 'MONITOR-SUCCESS';
     }
@@ -233,6 +236,7 @@ async function reportError(distributorID, errorCode , addonUUID = "") {
         Summary: errorCode
     };
 
+    //const testsUrl = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/1bf66ddbb8e745e791fa6e6de0cf465b/4361420b-8fde-48eb-b62a-0e34fec63f5c';
     const url = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/400154cd59544fd583791a2f99641189/4361420b-8fde-48eb-b62a-0e34fec63f5c';
     
     var res = await fetch(url, {
@@ -241,7 +245,6 @@ async function reportError(distributorID, errorCode , addonUUID = "") {
     });
 
     return errorMessage;
-
 }
 
 function getDistributorID(service){
@@ -265,4 +268,17 @@ async function getCodeJobLastStatus(service) {
     let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
     let status = JSON.parse(addon.AdditionalData).Status;
     return status;
+}
+
+async function statusUpdate(service, lastStatus, success, errorCode){
+    let errorMessage = '';
+    const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
+    if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
+        errorMessage = await reportError(getDistributorID(service), errorCode);
+        await updateInstalledAddons(service, success);
+    }
+    else{
+        errorMessage = await reportErrorLog(getDistributorID(service), errorCode);
+    }
+    return errorMessage;
 }
