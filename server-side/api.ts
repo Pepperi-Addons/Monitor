@@ -23,6 +23,7 @@ const errors = {
 };
 
 export async function monitor(client: Client, request: Request) {
+    console.log('MonitorAddon start monitor function');
     const service = new MyService(client);
     let errorCode = '';
     let success = false;
@@ -61,6 +62,7 @@ export async function monitorPut(service) {
     let result;
     let object;
     try{
+        console.log('MonitorAddon, monitorPut start first Get udt');
         result = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
         object = result[0];
     }
@@ -90,10 +92,12 @@ export async function monitorPut(service) {
     };
 
     try {
+        console.log('MonitorAddon, monitorPut start Post wcad put');
         const putResponse = await service.papiClient.post('/wacd/put', body);
     }
     catch (err) { }
 
+    console.log('MonitorAddon, monitorPut start second Get udt');
     const response = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
     if (response[0].Values[0] == count) {
         return 'MONITOR-SUCCESS';
