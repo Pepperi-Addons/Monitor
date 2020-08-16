@@ -208,13 +208,16 @@ export async function check_addons_execution_limit(client, request) {
 async function reportErrorLog(distributorID, errorCode, addonUUID = "") {
     let error = "";
     if(addonUUID != null && addonUUID != ""){
-        error = 'DistributorID: '+distributorID+'\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"];
+        error = 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
     }
     else{
-        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"];
+        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
     }
 
-    console.error(error);
+    if (errorCode=='MONITOR-SUCCESS')
+        console.log(error);
+    else
+        console.error(error);
     return error;
 }
 
@@ -222,7 +225,7 @@ async function reportError(distributorID, errorCode , addonUUID = "") {
     const errorMessage = reportErrorLog(distributorID, errorCode, addonUUID)
     const body = {
         themeColor:errors[errorCode]["Color"],
-        Text: 'DistributorID: '+distributorID+'\n\rErrorCode: ' + errorCode + '\n\rErrorMessage: '+ errors[errorCode]["Message"],
+        Text: 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"],
         Summary: errorCode
     };
 
