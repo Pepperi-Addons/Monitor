@@ -47,9 +47,9 @@ export async function monitor(client: Client, request: Request) {
         errorMessage = await statusUpdate(service, lastStatus, success, errorCode);
     }
     catch (err) {
+        success = false;
         const error = ('message' in err) ? err.message : 'Unknown Error Occured';
-        errorMessage = await reportError(getDistributorID(service), 'UNKNOWN-ERROR');
-        success=false;
+        errorMessage = await statusUpdate(service, false, success, 'UNKNOWN-ERROR');
     }
     finally{
         clearTimeout(timeout);
