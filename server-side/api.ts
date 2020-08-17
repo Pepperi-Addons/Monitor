@@ -184,10 +184,13 @@ export async function monitorSync(service) {
 };
 
 export async function check_addons_execution_limit(client, request) {
+    console.log("check_addons_execution_limit: start check addons execution limit");
     try {
         var resultItems = { PassedItems: new Array(), NotPassedItems: new Array() };
         const service = new MyService(client);
+        console.log("check_addons_execution_limit: send post request to /addons/code_jobs_limits");
         const result = await service.papiClient.post(`/addons/code_jobs_limits`);
+        console.log("check_addons_execution_limit: number of items return from function = " + Object.keys(result).length);
         if(result != null && Object.keys(result).length > 0){
             for (var item in result) {
                 if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == true){
@@ -199,6 +202,7 @@ export async function check_addons_execution_limit(client, request) {
                 }
             }
         }
+        console.log("check_addons_execution_limit: finish check addons execution limit");
         return {
             success:true, 
             resultObject:resultItems
@@ -215,10 +219,10 @@ export async function check_addons_execution_limit(client, request) {
 async function reportErrorLog(distributorID, errorCode, addonUUID = "") {
     let error = "";
     if(addonUUID != null && addonUUID != ""){
-        error = 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
+        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
     }
     else{
-        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
+        error = 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
     }
 
     if (errorCode=='MONITOR-SUCCESS')
