@@ -197,16 +197,16 @@ function GetMonitorCronExpression(token, maintenanceWindowHour){
     let hour = '';
 
     switch(maintenanceWindowHour) {
-        case maintenanceWindowHour=0:
+        case 0:
             hour = "1-23";
             break;
-        case maintenanceWindowHour=1:
+        case 1:
             hour = "0,2-23";
             break;
-        case maintenanceWindowHour=22:
+        case 22:
             hour = "0-21,23";
             break;
-        case maintenanceWindowHour=23:
+        case 23:
             hour = "0-22";
             break;
         default:
