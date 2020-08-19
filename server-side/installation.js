@@ -100,7 +100,7 @@ exports.uninstall = async (Client, Request) => {
 };
 
 exports.upgrade = async (Client, Request) => {
-    //Client.AddonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    Client.AddonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     let success = true;
     let errorMessage = '';
     let resultObject = {};
@@ -123,6 +123,16 @@ exports.upgrade = async (Client, Request) => {
             errorMessage = retVal.errorMessage;
             console.log('CheckAddonsExecutionLimit codejob installed succeeded.');
         }
+        else{
+            const codeJobUUID = data[additionalDataCodeJobName];
+            let codeJob = await GetCodeJob(Client, papiClient, codeJobUUID);
+            if (codeJob.FunctionName!='daily_monitor'){
+                let retVal = await UpdateCheckAddonLimit(Client, papiClient, codeJobUUID);
+                success = retVal.success;
+                errorMessage = retVal.errorMessage;
+                console.log('CheckAddonsExecutionLimit codejob updated succeeded.');
+            }
+        }
     }
     return {
         success: success,
@@ -135,7 +145,7 @@ exports.downgrade = async (Client, Request) => {
     return {success:true,resultObject:{}};
 };
 
-async function updateCodeJobUUID(papiClient, addonUUID, uuid, additionalDataCodeJobName) {
+async function UpdateCodeJobUUID(papiClient, addonUUID, uuid, additionalDataCodeJobName) {
     try {
         let addon = await papiClient.addons.installedAddons.addonUUID(addonUUID).get();
         console.log("installed addon object is: " + JSON.stringify(addon));
@@ -168,7 +178,7 @@ async function updateCodeJobUUID(papiClient, addonUUID, uuid, additionalDataCode
     }
 }
 
-async function getCodeJobUUID(papiClient, addonUUID, additionalDataCodeJobName) {
+async function GetCodeJobUUID(papiClient, addonUUID, additionalDataCodeJobName) {
     let uuid = '';
     let addon = await papiClient.addons.installedAddons.addonUUID(addonUUID).get();
     const additionalData= addon? addon.AdditionalData : false;
@@ -180,13 +190,33 @@ async function getCodeJobUUID(papiClient, addonUUID, additionalDataCodeJobName) 
     return uuid;
 }
 
-function getCronExpression(token){
+function GetMonitorCronExpression(token, maintenanceWindowHour){
     // rand is integet between 0-4 included.
     const rand = (jwtDecode(token)['pepperi.distributorid'])%5;
-    return rand +"-59/5 * * * *";
+    const minute = rand +"-59/5";
+    let hour = '';
+
+    switch(maintenanceWindowHour) {
+        case maintenanceWindowHour=0:
+            hour = "1-23";
+            break;
+        case maintenanceWindowHour=1:
+            hour = "0,2-23";
+            break;
+        case maintenanceWindowHour=22:
+            hour = "0-21,23";
+            break;
+        case maintenanceWindowHour=23:
+            hour = "0-22";
+            break;
+        default:
+            hour = "0-"+(maintenanceWindowHour-1)+','+(maintenanceWindowHour+1)+"-23";
+        }
+
+    return minute + " " + hour +" * * *";
 }
 
-function getAddonLimitCronExpression(token){
+function GetAddonLimitCronExpression(token){
     // rand is integet between 0-4 included.
     const rand = (jwtDecode(token)['pepperi.distributorid'])%59;
     return rand +"-59/60 4 * * *";
@@ -200,7 +230,7 @@ async function InstallMonitor(Client, papiClient){
         Hidden : false,
         Owner: {
             UUID: papiClient.AddonUUID
-          },
+        },
 
     };
     const resultAddTable = await papiClient.metaData.userDefinedTables.upsert(mapDataMetaData);
@@ -211,15 +241,17 @@ async function InstallMonitor(Client, papiClient){
         Values: ["0"]
     };
     const resultAddRow = await papiClient.userDefinedTables.upsert(mapData);
-    let codeJob = await CreateAddonCodeJob(Client, papiClient, "Monitor Addon", "Monitor Addon", "api", "monitor", getCronExpression(Client.OAuthAccessToken));
-    let retVal = await updateCodeJobUUID(papiClient, Client.AddonUUID, codeJob.UUID, 'CodeJobUUID');
+    const maintenance = await papiClient.metaData.flags.name('Maintenance').get();
+    const maintenanceWindowHour = parseInt(maintenance.MaintenanceWindow.split(':')[0]);
+    let codeJob = await CreateAddonCodeJob(Client, papiClient, "Monitor Addon", "Monitor Addon", "api", "monitor", GetMonitorCronExpression(Client.OAuthAccessToken, maintenanceWindowHour));
+    let retVal = await UpdateCodeJobUUID(papiClient, Client.AddonUUID, codeJob.UUID, 'CodeJobUUID');
     return retVal;
 }
 
 async function InstallCheckAddonLimit(Client, papiClient){
     let codeJob = await CreateAddonCodeJob(Client, papiClient, "Check addons execution limit", "Check distributor not pass the addons execution limit", "api", 
-    "check_addons_execution_limit", getAddonLimitCronExpression(Client.OAuthAccessToken));
-    let retVal = await updateCodeJobUUID(papiClient, Client.AddonUUID, codeJob.UUID, 'CheckAddonsExecutionLimitCodeJobUUID');
+    "daily_monitor", GetAddonLimitCronExpression(Client.OAuthAccessToken));
+    let retVal = await UpdateCodeJobUUID(papiClient, Client.AddonUUID, codeJob.UUID, 'CheckAddonsExecutionLimitCodeJobUUID');
     return retVal;
 }
 
@@ -236,5 +268,31 @@ async function CreateAddonCodeJob(Client, papiClient, jobName, jobDescription, a
         NumberOfTries: 1
     });
     console.log("result object recieved from Code jobs is: " + JSON.stringify(codeJob));
+    return codeJob;
+}
+
+async function UpdateCheckAddonLimit(Client, papiClient, codeJobUUID){
+    try {
+        const codeJob = await papiClient.codeJobs.upsert({
+            UUID: codeJobUUID,
+            IsScheduled: true,
+            FunctionName: 'daily_monitor',
+        });
+        return {
+            success: true,
+            errorMessage: "Updated code job successfully."
+        };
+    }
+    catch(err){
+        return {
+            success: false,
+            errorMessage: "Failed to update code job."
+        };
+    }
+    
+}
+
+async function GetCodeJob(Client, papiClient, codeJobUUID) {
+    const codeJob = await papiClient.get('/code_jobs/'+codeJobUUID);
     return codeJob;
 }

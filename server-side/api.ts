@@ -35,21 +35,21 @@ export async function monitor(client: Client, request: Request) {
     try {
 
         timeout = setTimeout(async function() { 
-            await statusUpdate(service, false, false, 'TIMEOUT');},90000);
+            await StatusUpdate(service, false, false, 'TIMEOUT');},90000);
 
-        errorCode = await monitorPut(service);
-        const lastStatus = await getCodeJobLastStatus(service);
+        errorCode = await MonitorPut(service);
+        const lastStatus = await GetCodeJobLastStatus(service);
 
         if (errorCode=='MONITOR-SUCCESS'){
             success = true;
         }
 
-        errorMessage = await statusUpdate(service, lastStatus, success, errorCode);
+        errorMessage = await StatusUpdate(service, lastStatus, success, errorCode);
     }
     catch (err) {
         success = false;
         const error = ('message' in err) ? err.message : 'Unknown Error Occured';
-        errorMessage = await statusUpdate(service, false, success, 'UNKNOWN-ERROR');
+        errorMessage = await StatusUpdate(service, false, success, 'UNKNOWN-ERROR');
     }
     finally{
         clearTimeout(timeout);
@@ -61,7 +61,23 @@ export async function monitor(client: Client, request: Request) {
 
 };
 
-export async function monitorPut(service) {
+export async function daily_monitor(client: Client, request: Request) {
+    console.log('MonitorAddon start daily_monitor function');
+    try {
+        const service = new MyService(client);
+        const checkAddonsExecutionLimit = await check_addons_execution_limit(client, request);
+        const checkMaintenance = await CheckMaintenanceWindow(service);
+
+    }
+    catch (err) {
+        return {
+            Success: false,
+            ErrorMessage: ('message' in err) ? err.message : 'Unknown Error Occured',
+        }
+    }
+};
+
+export async function MonitorPut(service) {
     let result;
     let object;
     try{
@@ -110,7 +126,7 @@ export async function monitorPut(service) {
     }
 };
 
-export async function monitorSync(service) {
+export async function MonitorSync(service) {
     let result;
     let object;
     try{
@@ -194,7 +210,7 @@ export async function check_addons_execution_limit(client, request) {
         if(result != null && Object.keys(result).length > 0){
             for (var item in result) {
                 if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == true){
-                    reportError(getDistributorID(service), 'PASSED-ADDON-LIMIT', item);
+                    ReportError(GetDistributorID(service), 'PASSED-ADDON-LIMIT', item);
                     resultItems["PassedItems"].push(item);
                 }
                 else if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == false){
@@ -216,7 +232,7 @@ export async function check_addons_execution_limit(client, request) {
     }
 };
 
-async function reportErrorLog(distributorID, errorCode, addonUUID = "") {
+async function ReportErrorLog(distributorID, errorCode, addonUUID = "") {
     let error = "";
     if(addonUUID != null && addonUUID != ""){
         error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
@@ -232,8 +248,8 @@ async function reportErrorLog(distributorID, errorCode, addonUUID = "") {
     return error;
 }
 
-async function reportError(distributorID, errorCode , addonUUID = "") {
-    const errorMessage = reportErrorLog(distributorID, errorCode, addonUUID)
+async function ReportError(distributorID, errorCode , addonUUID = "") {
+    const errorMessage = ReportErrorLog(distributorID, errorCode, addonUUID)
     let url = '';
     const body = {
         themeColor:errors[errorCode]["Color"],
@@ -257,11 +273,11 @@ async function reportError(distributorID, errorCode , addonUUID = "") {
     return errorMessage;
 }
 
-function getDistributorID(service){
+function GetDistributorID(service){
     return jwtDecode(service.client.OAuthAccessToken)['pepperi.distributorid'];
 }
 
-async function updateInstalledAddons(service, status) {
+async function UpdateInstalledAddons(service, status) {
     //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     const addonUUID = service.client.AddonUUID;
     let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
@@ -272,7 +288,7 @@ async function updateInstalledAddons(service, status) {
     const response = await service.papiClient.addons.installedAddons.upsert(addon);
 }
 
-async function getCodeJobLastStatus(service) {
+async function GetCodeJobLastStatus(service) {
     //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     const addonUUID = service.client.AddonUUID;
     let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
@@ -280,15 +296,84 @@ async function getCodeJobLastStatus(service) {
     return status;
 }
 
-async function statusUpdate(service, lastStatus, success, errorCode){
+async function StatusUpdate(service, lastStatus, success, errorCode){
     let errorMessage = '';
     const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
     if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
-        errorMessage = await reportError(getDistributorID(service), errorCode);
-        await updateInstalledAddons(service, success);
+        errorMessage = await ReportError(GetDistributorID(service), errorCode);
+        await UpdateInstalledAddons(service, success);
     }
     else{
-        errorMessage = await reportErrorLog(getDistributorID(service), errorCode);
+        errorMessage = await ReportErrorLog(GetDistributorID(service), errorCode);
     }
     return errorMessage;
+}
+
+async function CheckMaintenanceWindow(service) {
+    let success = false;
+    try{
+        
+        const maintenance = await service.papiClient.metaData.flags.name('Maintenance').get();
+        const maintenanceWindowHour = parseInt(maintenance.MaintenanceWindow.split(':')[0]);
+        const updatedCronExpression = await GetMonitorCronExpression(service.client.OAuthAccessToken, maintenanceWindowHour);
+
+        const codeJob = await GetCodeJob(service);
+        const previosCronExpression = codeJob.CronExpression;
+        if (updatedCronExpression!=previosCronExpression){
+            await UpdateCodeJobCronExpression(service, codeJob, updatedCronExpression);
+        }
+        success = true;
+        return success;
+    }
+    catch (err){
+        return success;
+    }
+    
+}
+
+async function GetCodeJob(service) {
+    const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    //const addonUUID = service.client.AddonUUID;
+    const addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
+    const codeJobUUID = JSON.parse(addon.AdditionalData).CodeJobUUID;
+    const codeJob = await service.papiClient.get('/code_jobs/'+codeJobUUID);
+
+    return codeJob;
+}
+
+async function UpdateCodeJobCronExpression(service, codeJob, updatedCronExpression) {
+    const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    //const addonUUID = service.client.AddonUUID;
+    const response = await service.papiClient.codeJobs.upsert({
+        UUID: codeJob.UUID,
+        CronExpression: updatedCronExpression,
+        IsScheduled: true
+    });
+    return;
+}
+
+async function GetMonitorCronExpression(token, maintenanceWindowHour) {
+        // rand is integet between 0-4 included.
+        const rand = (jwtDecode(token)['pepperi.distributorid'])%5;
+        const minute = rand +"-59/5";
+        let hour = '';
+
+        switch(maintenanceWindowHour) {
+            case maintenanceWindowHour=0:
+                hour = "1-23";
+                break;
+            case maintenanceWindowHour=1:
+                hour = "0,2-23";
+                break;
+            case maintenanceWindowHour=22:
+                hour = "0-21,23";
+                break;
+            case maintenanceWindowHour=23:
+                hour = "0-22";
+                break;
+            default:
+                hour = "0-"+(maintenanceWindowHour-1)+','+(maintenanceWindowHour+1)+"-23";
+          }
+
+        return minute + " " + hour +" * * *";
 }
