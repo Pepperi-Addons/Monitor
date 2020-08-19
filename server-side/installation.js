@@ -116,7 +116,8 @@ exports.upgrade = async (Client, Request) => {
     let addon = await papiClient.addons.installedAddons.addonUUID(Client.AddonUUID).get();
     const additionalData= addon? addon.AdditionalData : false;
     if(additionalData) {
-        if(addon.AdditionalData[additionalDataCodeJobName] == null){
+        let data = JSON.parse(addon.AdditionalData);
+        if(data[additionalDataCodeJobName] == null){
             let retVal = await InstallCheckAddonLimit(Client, papiClient);
             success = retVal.success;
             errorMessage = retVal.errorMessage;
