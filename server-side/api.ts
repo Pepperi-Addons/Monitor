@@ -14,7 +14,7 @@ const sleep = (milliseconds) => {
 };
 const errors = {
     "MONITOR-SUCCESS":{"Message":'MonitorAddon succeeded', "Color":"00FF00"},
-    "UNKNOWN-ERROR":{"Message":'Unknown error occured, contact support/rnd to fix this', "Color":"990000"},
+    "UNKNOWN-ERROR":{"Message":'Unknown error occured, contact rnd to fix this', "Color":"990000"},
     "GET-UDT-FAILED":{"Message":'Get udt failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "PUT-UPDATE-FAILED":{"Message":'Put status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-UPDATE-FAILED":{"Message":'Sync status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
@@ -31,14 +31,16 @@ export async function monitor(client: Client, request: Request) {
     let success = false;
     let errorMessage ='';
     let timeout;
+    let lastStatus;
 
     try {
 
         timeout = setTimeout(async function() { 
-            await StatusUpdate(service, false, false, 'TIMEOUT');},90000);
+            await StatusUpdate(service, false, false, 'TIMEOUT');
+            lastStatus = false;},90000);
 
         errorCode = await MonitorPut(service);
-        const lastStatus = await GetCodeJobLastStatus(service);
+        lastStatus = await GetCodeJobLastStatus(service);
 
         if (errorCode=='MONITOR-SUCCESS'){
             success = true;
@@ -48,8 +50,8 @@ export async function monitor(client: Client, request: Request) {
     }
     catch (err) {
         success = false;
-        const error = ('message' in err) ? err.message : 'Unknown Error Occured';
-        errorMessage = await StatusUpdate(service, false, success, 'UNKNOWN-ERROR');
+        const innerError = ('stack' in err) ? err.stack : 'Unknown Error Occured';
+        errorMessage = await StatusUpdate(service, false, success, 'UNKNOWN-ERROR',innerError);
     }
     finally{
         clearTimeout(timeout);
@@ -232,14 +234,9 @@ export async function check_addons_execution_limit(client, request) {
     }
 };
 
-async function ReportErrorLog(distributorID, errorCode, addonUUID = "") {
+async function ReportErrorLog(distributorID, errorCode, addonUUID = "", innerMessage="") {
     let error = "";
-    if(addonUUID != null && addonUUID != ""){
-        error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
-    }
-    else{
-        error = 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"];
-    }
+    error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"] + '\n\rInnerMessage: '+ innerMessage;
 
     if (errorCode=='MONITOR-SUCCESS')
         console.log(error);
@@ -248,20 +245,35 @@ async function ReportErrorLog(distributorID, errorCode, addonUUID = "") {
     return error;
 }
 
-async function ReportError(distributorID, errorCode , addonUUID = "") {
-    const errorMessage = ReportErrorLog(distributorID, errorCode, addonUUID)
+async function ReportError(distributorID, errorCode , addonUUID = "", innerMessage="") {
+    const errorMessage = ReportErrorLog(distributorID, errorCode, addonUUID, innerMessage)
     let url = '';
     const body = {
         themeColor:errors[errorCode]["Color"],
-        Text: 'DistributorID: '+distributorID+'\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"],
-        Summary: errorCode
+        Summary: errorCode,
+        sections: [{
+            facts: [{
+                name: "Distributor ID",
+                value: distributorID
+            }, {
+                name: "Code",
+                value: errorCode
+            }, {
+                name: "Message",
+                value: errors[errorCode]["Message"]
+            }, {
+                name: "Inner Message",
+                value: innerMessage
+            }],
+            "markdown": true
+        }],
     };
 
     if (errorCode=='MONITOR-SUCCESS') //green icon
-        //const testsUrl = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/1bf66ddbb8e745e791fa6e6de0cf465b/4361420b-8fde-48eb-b62a-0e34fec63f5c';
+        //url = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/1bf66ddbb8e745e791fa6e6de0cf465b/4361420b-8fde-48eb-b62a-0e34fec63f5c';
         url = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/400154cd59544fd583791a2f99641189/4361420b-8fde-48eb-b62a-0e34fec63f5c';
     else{ // red icon
-        //const testsUrl = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/17e9a0bc2dff46aa9a9422c0a3c2a95a/4361420b-8fde-48eb-b62a-0e34fec63f5c';
+        //url = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/17e9a0bc2dff46aa9a9422c0a3c2a95a/4361420b-8fde-48eb-b62a-0e34fec63f5c';
         url = 'https://outlook.office.com/webhook/9da5da9c-4218-4c22-aed6-b5c8baebfdd5@2f2b54b7-0141-4ba7-8fcd-ab7d17a60547/IncomingWebhook/0db0e56f12044634937712db79f704e1/4361420b-8fde-48eb-b62a-0e34fec63f5c';
     }
 
@@ -296,15 +308,15 @@ async function GetCodeJobLastStatus(service) {
     return status;
 }
 
-async function StatusUpdate(service, lastStatus, success, errorCode){
+async function StatusUpdate(service, lastStatus, success, errorCode, innerMessage=""){
     let errorMessage = '';
     const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
     if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
-        errorMessage = await ReportError(GetDistributorID(service), errorCode);
+        errorMessage = await ReportError(GetDistributorID(service), errorCode, "", innerMessage);
         await UpdateInstalledAddons(service, success);
     }
     else{
-        errorMessage = await ReportErrorLog(GetDistributorID(service), errorCode);
+        errorMessage = await ReportErrorLog(GetDistributorID(service), errorCode, "", innerMessage);
     }
     return errorMessage;
 }
