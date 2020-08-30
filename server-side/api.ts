@@ -40,7 +40,10 @@ export async function monitor(client: Client, request: Request) {
             lastStatus = false;},90000);
 
         errorCode = await MonitorPut(service);
-        lastStatus = await GetCodeJobLastStatus(service);
+        const AdditionalData = await GetAdditionalData(service);
+        lastStatus = AdditionalData.Status;//await GetCodeJobLastStatus(service);
+        Object.assign(service, {name: AdditionalData.DistributorName});
+        Object.assign(service, {machine: AdditionalData.MachineAndPort});
 
         if (errorCode=='MONITOR-SUCCESS'){
             success = true;
@@ -60,7 +63,6 @@ export async function monitor(client: Client, request: Request) {
         success: success,
         errorMessage: errorMessage,
     };
-
 };
 
 export async function daily_monitor(client: Client, request: Request) {
@@ -69,7 +71,6 @@ export async function daily_monitor(client: Client, request: Request) {
         const service = new MyService(client);
         const checkAddonsExecutionLimit = await check_addons_execution_limit(client, request);
         const checkMaintenance = await CheckMaintenanceWindow(service);
-
     }
     catch (err) {
         return {
@@ -212,7 +213,7 @@ export async function check_addons_execution_limit(client, request) {
         if(result != null && Object.keys(result).length > 0){
             for (var item in result) {
                 if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == true){
-                    ReportError(GetDistributorID(service), 'PASSED-ADDON-LIMIT', item);
+                    ReportError(await GetDistributor(service), 'PASSED-ADDON-LIMIT', item);
                     resultItems["PassedItems"].push(item);
                 }
                 else if(result[item].IsPassedTheLimit != null && result[item].IsPassedTheLimit == false){
@@ -234,9 +235,9 @@ export async function check_addons_execution_limit(client, request) {
     }
 };
 
-async function ReportErrorLog(distributorID, errorCode, addonUUID = "", innerMessage="") {
+async function ReportErrorLog(distributor, errorCode, addonUUID = "", innerMessage="") {
     let error = "";
-    error = 'DistributorID: '+distributorID+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"] + '\n\rInnerMessage: '+ innerMessage;
+    error = 'DistributorID: '+distributor.InternalID+'\n\rName: '+distributor.Name+'\n\rMachine and Port: '+distributor.MachineAndPort+'\n\rAddonUUID: ' + addonUUID + '\n\rCode: ' + errorCode + '\n\rMessage: '+ errors[errorCode]["Message"] + '\n\rInnerMessage: '+ innerMessage;
 
     if (errorCode=='MONITOR-SUCCESS')
         console.log(error);
@@ -245,17 +246,24 @@ async function ReportErrorLog(distributorID, errorCode, addonUUID = "", innerMes
     return error;
 }
 
-async function ReportError(distributorID, errorCode , addonUUID = "", innerMessage="") {
-    const errorMessage = ReportErrorLog(distributorID, errorCode, addonUUID, innerMessage)
+async function ReportError(distributor, errorCode , addonUUID = "", innerMessage="") {
+    
+    const errorMessage = ReportErrorLog(distributor, errorCode, addonUUID, innerMessage)
     let url = '';
     const body = {
         themeColor:errors[errorCode]["Color"],
-        Summary: errorCode,
+        Summary: distributor.InternalID + " - "+distributor.Name,
         sections: [{
             facts: [{
                 name: "Distributor ID",
-                value: distributorID
-            }, {
+                value: distributor.InternalID
+            },{
+                name: "Name",
+                value: distributor.Name
+            },{
+                name: "Machine and Port",
+                value: distributor.MachineAndPort
+            },{
                 name: "Code",
                 value: errorCode
             }, {
@@ -289,12 +297,50 @@ function GetDistributorID(service){
     return jwtDecode(service.client.OAuthAccessToken)['pepperi.distributorid'];
 }
 
-async function UpdateInstalledAddons(service, status) {
+async function GetDistributor(service){
+    
+    const distributorID = GetDistributorID(service);
+    const distributor ={
+        InternalID: distributorID,
+        Name: service.name,
+        MachineAndPort: service.machine
+    };
+    try{
+        
+        let distributorData = await service.papiClient.get('/distributor');
+        distributor.Name = distributorData.Name;
+        const machineData = await service.papiClient.get('/distributor/machine');
+        distributor.MachineAndPort = machineData.Machine + ":" + machineData.Port;
+        return distributor;
+    }
+    catch(err){
+        return distributor;
+    }
+    
+}
+
+function GetDistributorCache(service){
+    
+    const distributorID = GetDistributorID(service);
+    const distributor ={
+        InternalID: distributorID,
+        Name: service.name,
+        MachineAndPort: service.machine
+    };
+    return distributor;
+}
+
+async function UpdateInstalledAddons(service, distributor, status) {
     //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     const addonUUID = service.client.AddonUUID;
     let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
     let data = JSON.parse(addon.AdditionalData);
     data.Status = status;
+    data.Name = distributor.Name;
+    data.MachineAndPort = distributor.MachineAndPort;
+    if (!status){
+        data.MonitorError = data.MonitorError +1;
+    }
     addon.AdditionalData = JSON.stringify(data);
 
     const response = await service.papiClient.addons.installedAddons.upsert(addon);
@@ -308,15 +354,25 @@ async function GetCodeJobLastStatus(service) {
     return status;
 }
 
+async function GetAdditionalData(service) {
+    //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    const addonUUID = service.client.AddonUUID;
+    let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
+    return JSON.parse(addon.AdditionalData);
+}
+
 async function StatusUpdate(service, lastStatus, success, errorCode, innerMessage=""){
     let errorMessage = '';
+    let distributor;
     const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
     if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
-        errorMessage = await ReportError(GetDistributorID(service), errorCode, "", innerMessage);
-        await UpdateInstalledAddons(service, success);
+        distributor = await GetDistributor(service);
+        errorMessage = await ReportError(distributor, errorCode, "", innerMessage);
+        await UpdateInstalledAddons(service, distributor, success);
     }
     else{
-        errorMessage = await ReportErrorLog(GetDistributorID(service), errorCode, "", innerMessage);
+        distributor = GetDistributorCache(service);
+        errorMessage = await ReportErrorLog(distributor, errorCode, "", innerMessage);
     }
     return errorMessage;
 }

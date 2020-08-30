@@ -111,27 +111,13 @@ exports.upgrade = async (Client, Request) => {
         addonUUID: Client.AddonUUID
     });
 
-    // Check if AddonsExecutionLimit codejob installed, if not install it
-    let additionalDataCodeJobName = 'CheckAddonsExecutionLimitCodeJobUUID';
+    // Check if AdditionalData contain MonitorError counter, if not contain this key
     let addon = await papiClient.addons.installedAddons.addonUUID(Client.AddonUUID).get();
     const additionalData= addon? addon.AdditionalData : false;
     if(additionalData) {
         let data = JSON.parse(addon.AdditionalData);
-        if(data[additionalDataCodeJobName] == null){
-            let retVal = await InstallCheckAddonLimit(Client, papiClient);
-            success = retVal.success;
-            errorMessage = retVal.errorMessage;
-            console.log('CheckAddonsExecutionLimit codejob installed succeeded.');
-        }
-        else{
-            const codeJobUUID = data[additionalDataCodeJobName];
-            let codeJob = await GetCodeJob(Client, papiClient, codeJobUUID);
-            if (codeJob.FunctionName!='daily_monitor'){
-                let retVal = await UpdateCheckAddonLimit(Client, papiClient, codeJobUUID);
-                success = retVal.success;
-                errorMessage = retVal.errorMessage;
-                console.log('CheckAddonsExecutionLimit codejob updated succeeded.');
-            }
+        if (data['MonitorError'] == null){
+            await UpdateCodeJobUUID(papiClient, Client.AddonUUID, data['CodeJobUUID'], 'CodeJobUUID');
         }
     }
     return {
@@ -149,11 +135,15 @@ async function UpdateCodeJobUUID(papiClient, addonUUID, uuid, additionalDataCode
     try {
         let addon = await papiClient.addons.installedAddons.addonUUID(addonUUID).get();
         console.log("installed addon object is: " + JSON.stringify(addon));
+        const distributor= await GetDistributor(papiClient);
         const additionalData= addon? addon.AdditionalData : false;
         if(additionalData) {
             let data = JSON.parse(addon.AdditionalData);
             data[additionalDataCodeJobName] = uuid;
             data.Status = true;
+            data.MonitorError = 0;
+            data.Name = distributor.Name;
+            data.MachineAndPort = distributor.MachineAndPort;
             addon.AdditionalData = JSON.stringify(data);
         }
         else {
@@ -295,4 +285,17 @@ async function UpdateCheckAddonLimit(Client, papiClient, codeJobUUID){
 async function GetCodeJob(Client, papiClient, codeJobUUID) {
     const codeJob = await papiClient.get('/code_jobs/'+codeJobUUID);
     return codeJob;
+}
+
+async function GetDistributor(papiClient){
+    let distributorData = await service.papiClient.get('/distributor');
+    distributor.Name = distributorData.Name;
+    const machineData = await service.papiClient.get('/distributor/machine');
+    distributor.MachineAndPort = machineData.Machine + ":" + machineData.Port;
+    const distributor ={
+        InternalID: jwtDecode(token)['pepperi.distributorid'],
+        Name: distributorData.Name,
+        MachineAndPort: machineData.Machine + ":" + machineData.Port
+    };
+    return distributor;
 }
