@@ -62,7 +62,7 @@ exports.uninstall = async (Client, Request) => {
         });
         //const result = await papiClient.delete('/meta_data/user_defined_tables/PepperiMonitor');
 
-        let monitorUUID = await getCodeJobUUID(papiClient, Client.AddonUUID, 'CodeJobUUID');
+        let monitorUUID = await GetCodeJobUUID(papiClient, Client.AddonUUID, 'CodeJobUUID');
         if(monitorUUID != '') {
             await papiClient.codeJobs.upsert({
                 UUID:monitorUUID,
@@ -73,7 +73,7 @@ exports.uninstall = async (Client, Request) => {
         }
         console.log('MonitorAddon uninstalled succeeded.');
 
-        let checkAddonsLimitUUID = await getCodeJobUUID(papiClient, Client.AddonUUID, 'CheckAddonsExecutionLimitCodeJobUUID');
+        let checkAddonsLimitUUID = await GetCodeJobUUID(papiClient, Client.AddonUUID, 'CheckAddonsExecutionLimitCodeJobUUID');
         if(checkAddonsLimitUUID != '') {
             await papiClient.codeJobs.upsert({
                 UUID:checkAddonsLimitUUID,
