@@ -100,7 +100,7 @@ exports.uninstall = async (Client, Request) => {
 };
 
 exports.upgrade = async (Client, Request) => {
-    Client.AddonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    //Client.AddonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     let success = true;
     let errorMessage = '';
     let resultObject = {};
@@ -111,7 +111,7 @@ exports.upgrade = async (Client, Request) => {
         addonUUID: Client.AddonUUID
     });
 
-    // Check if AdditionalData contain MonitorError counter, if not contain this key
+    // Check if AdditionalData contain MonitorError counter, if not contain this key add it
     let addon = await papiClient.addons.installedAddons.addonUUID(Client.AddonUUID).get();
     const additionalData= addon? addon.AdditionalData : false;
     if(additionalData) {
