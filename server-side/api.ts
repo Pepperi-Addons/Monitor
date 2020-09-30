@@ -400,8 +400,8 @@ async function CheckMaintenanceWindow(service) {
 }
 
 async function GetCodeJob(service) {
-    const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
-    //const addonUUID = service.client.AddonUUID;
+    //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    const addonUUID = service.client.AddonUUID;
     const addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
     const codeJobUUID = JSON.parse(addon.AdditionalData).CodeJobUUID;
     const codeJob = await service.papiClient.get('/code_jobs/'+codeJobUUID);
@@ -410,8 +410,8 @@ async function GetCodeJob(service) {
 }
 
 async function UpdateCodeJobCronExpression(service, codeJob, updatedCronExpression) {
-    const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
-    //const addonUUID = service.client.AddonUUID;
+    //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    const addonUUID = service.client.AddonUUID;
     const response = await service.papiClient.codeJobs.upsert({
         UUID: codeJob.UUID,
         CronExpression: updatedCronExpression,
