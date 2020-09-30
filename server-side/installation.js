@@ -288,12 +288,10 @@ async function GetCodeJob(Client, papiClient, codeJobUUID) {
 }
 
 async function GetDistributor(papiClient){
-    let distributorData = await service.papiClient.get('/distributor');
-    distributor.Name = distributorData.Name;
-    const machineData = await service.papiClient.get('/distributor/machine');
-    distributor.MachineAndPort = machineData.Machine + ":" + machineData.Port;
+    let distributorData = await papiClient.get('/distributor');
+    const machineData = await papiClient.get('/distributor/machine');
     const distributor ={
-        InternalID: jwtDecode(token)['pepperi.distributorid'],
+        InternalID: distributorData.InternalID,
         Name: distributorData.Name,
         MachineAndPort: machineData.Machine + ":" + machineData.Port
     };
