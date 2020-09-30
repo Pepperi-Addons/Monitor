@@ -34,16 +34,16 @@ export async function monitor(client: Client, request: Request) {
     let lastStatus;
 
     try {
-
+        const AdditionalData = await GetAdditionalData(service);
+        Object.assign(service, {name: AdditionalData.Name});
+        Object.assign(service, {machine: AdditionalData.MachineAndPort});
+        lastStatus = AdditionalData.Status;//await GetCodeJobLastStatus(service);
+        
         timeout = setTimeout(async function() { 
             await StatusUpdate(service, false, false, 'TIMEOUT');
             lastStatus = false;},90000);
 
         errorCode = await MonitorPut(service);
-        const AdditionalData = await GetAdditionalData(service);
-        lastStatus = AdditionalData.Status;//await GetCodeJobLastStatus(service);
-        Object.assign(service, {name: AdditionalData.DistributorName});
-        Object.assign(service, {machine: AdditionalData.MachineAndPort});
 
         if (errorCode=='MONITOR-SUCCESS'){
             success = true;
