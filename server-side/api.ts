@@ -71,6 +71,9 @@ export async function daily_monitor(client: Client, request: Request) {
         const service = new MyService(client);
         const checkAddonsExecutionLimit = await check_addons_execution_limit(client, request);
         const checkMaintenance = await CheckMaintenanceWindow(service);
+
+        const distributor = await GetDistributor(service);
+        await UpdateDistributorOnInstalledAddons(service, distributor);
     }
     catch (err) {
         return {
@@ -346,6 +349,18 @@ async function UpdateInstalledAddons(service, distributor, status) {
     const response = await service.papiClient.addons.installedAddons.upsert(addon);
 }
 
+async function UpdateDistributorOnInstalledAddons(service, distributor) {
+    //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
+    const addonUUID = service.client.AddonUUID;
+    let addon = await service.papiClient.addons.installedAddons.addonUUID(addonUUID).get();
+    let data = JSON.parse(addon.AdditionalData);
+    data.Name = distributor.Name;
+    data.MachineAndPort = distributor.MachineAndPort;
+    addon.AdditionalData = JSON.stringify(data);
+
+    const response = await service.papiClient.addons.installedAddons.upsert(addon);
+}
+
 async function GetCodeJobLastStatus(service) {
     //const addonUUID='8c0ec216-af63-4999-8f50-f2d1dd8fa100';
     const addonUUID = service.client.AddonUUID;
@@ -365,7 +380,12 @@ async function StatusUpdate(service, lastStatus, success, errorCode, innerMessag
     let errorMessage = '';
     let distributor;
     const statusChanged = lastStatus? !success: success; //xor (true, false) -> true 
-    if (statusChanged || !success){ //write to channel 'System Status' if the test failed or on the first time when test changes from fail to success.
+    if (!success){ //write to channel 'System Status' if the test failed
+        distributor = await GetDistributorCache(service);
+        errorMessage = await ReportError(distributor, errorCode, "", innerMessage);
+        await UpdateInstalledAddons(service, distributor, success);
+    }
+    else if (statusChanged){ //write to channel 'System Status' on the first time when test changes from fail to success
         distributor = await GetDistributor(service);
         errorMessage = await ReportError(distributor, errorCode, "", innerMessage);
         await UpdateInstalledAddons(service, distributor, success);
