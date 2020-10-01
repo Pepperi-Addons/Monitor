@@ -43,7 +43,7 @@ export async function monitor(client: Client, request: Request) {
             await StatusUpdate(service, false, false, 'TIMEOUT');
             lastStatus = false;},90000);
 
-        errorCode = await MonitorPut(service);
+        errorCode = await MonitorSync(service);
 
         if (errorCode=='MONITOR-SUCCESS'){
             success = true;
@@ -167,7 +167,7 @@ export async function MonitorSync(service) {
     //do sync
     const body = {
         "LocalDataUpdates": LocalData,
-        "LastSyncDateTime": 7276633920,
+        "LastSyncDateTime": 93737011100000,
         "DeviceExternalID": "QASyncTest",
         "CPIVersion": "16.50",
         "TimeZoneDiff": 0,
