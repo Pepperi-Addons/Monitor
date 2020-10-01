@@ -187,7 +187,7 @@ export async function MonitorSync(service) {
     const syncJobUUID = syncResponse.SyncJobUUID;
     //check if the values field have been updated
     let statusResponse = await service.papiClient.get('/application/sync/jobinfo/' + syncJobUUID);
-    while (statusResponse.Status == 'SyncStart') {
+    while (statusResponse.Status == 'SyncStart' || statusResponse.Status == 'PutInProgress' ||statusResponse.Status == 'GetInProgress') {
         await sleep(2000);
         statusResponse = await service.papiClient.get('/application/sync/jobinfo/' + syncJobUUID);
     }
