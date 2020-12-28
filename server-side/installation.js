@@ -116,6 +116,7 @@ exports.upgrade = async (Client, Request) => {
     const additionalData= addon? addon.AdditionalData : false;
     if(additionalData) {
         let data = JSON.parse(addon.AdditionalData);
+        await UpdateCodeJobUUID(papiClient, Client.AddonUUID, data['CodeJobUUID'], 'CodeJobUUID');
         if (data['MonitorError'] == null){
             await UpdateCodeJobUUID(papiClient, Client.AddonUUID, data['CodeJobUUID'], 'CodeJobUUID');
         }
@@ -186,21 +187,28 @@ function GetMonitorCronExpression(token, maintenanceWindowHour){
     const minute = rand +"-59/5";
     let hour = '';
 
+    // monitor will be disabled from 3 hours, starting one hour before maintenance window and finished one hour after
     switch(maintenanceWindowHour) {
         case 0:
-            hour = "1-23";
+            hour = "2-22";
             break;
         case 1:
-            hour = "0,2-23";
+            hour = "3-23";
+            break;
+        case 2:
+            hour = "0,4-23";
+            break;
+        case 21:
+            hour = "0-19,23";
             break;
         case 22:
-            hour = "0-21,23";
+            hour = "0-20";
             break;
         case 23:
-            hour = "0-22";
+            hour = "1-21";
             break;
         default:
-            hour = "0-"+(maintenanceWindowHour-1)+','+(maintenanceWindowHour+1)+"-23";
+            hour = "0-"+(maintenanceWindowHour-2)+','+(maintenanceWindowHour+2)+"-23";
         }
 
     return minute + " " + hour +" * * *";

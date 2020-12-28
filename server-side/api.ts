@@ -19,8 +19,11 @@ const errors = {
     "PUT-UPDATE-FAILED":{"Message":'Put status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-UPDATE-FAILED":{"Message":'Sync status is done but Values field on map data have not been updated, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "SYNC-FAILED":{"Message":'Sync response status is Failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
+    "SYNC-CALL-FAILED":{"Message":'Sync api call Failed, Pls confirm NUC is not available and recycle if needed', "Color":"FF0000"},
     "PASSED-ADDON-LIMIT":{"Message":'Distributor passed the addon limit', "Color":"FF0000"},
-    "TIMEOUT":{"Message":'monitorPut function timeout', "Color":"FF0000"}
+    "TIMEOUT-GET-UDT":{"Message":'papi get udt call timeout', "Color":"FF0000"},
+    "TIMEOUT-SYNC":{"Message":'application/sync call timeout', "Color":"FF0000"},
+    "TIMEOUT-PUT":{"Message":'wacd/put call timeout', "Color":"FF0000"}
 };
 
 export async function monitor(client: Client, request: Request) {
@@ -30,7 +33,6 @@ export async function monitor(client: Client, request: Request) {
     let errorCode = '';
     let success = false;
     let errorMessage ='';
-    let timeout;
     let lastStatus;
 
     try {
@@ -38,11 +40,6 @@ export async function monitor(client: Client, request: Request) {
         Object.assign(service, {name: AdditionalData.Name});
         Object.assign(service, {machine: AdditionalData.MachineAndPort});
         lastStatus = AdditionalData.Status;//await GetCodeJobLastStatus(service);
-        
-        timeout = setTimeout(async function() { 
-            await StatusUpdate(service, false, false, 'TIMEOUT');
-            lastStatus = false;},90000);
-
         errorCode = await MonitorSync(service);
 
         if (errorCode=='MONITOR-SUCCESS'){
@@ -56,9 +53,7 @@ export async function monitor(client: Client, request: Request) {
         const innerError = ('stack' in err) ? err.stack : 'Unknown Error Occured';
         errorMessage = await StatusUpdate(service, false, success, 'UNKNOWN-ERROR',innerError);
     }
-    finally{
-        clearTimeout(timeout);
-    }
+
     return {
         success: success,
         errorMessage: errorMessage,
@@ -86,9 +81,14 @@ export async function daily_monitor(client: Client, request: Request) {
 export async function MonitorPut(service) {
     let result;
     let object;
+    let timeout;
     try{
         console.log('MonitorAddon, monitorPut start first Get udt');
+        timeout = setTimeout(async function() { 
+            await StatusUpdate(service, false, false, 'TIMEOUT-GET-UDT');
+            },90000);
         result = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor' AND MainKey='MonitorSyncCounter'" }).toArray();
+        clearTimeout(timeout);
         object = result[0];
     }
     catch (error){
@@ -116,11 +116,15 @@ export async function MonitorPut(service) {
         }
     };
 
-    try {
+    try { 
         console.log('MonitorAddon, monitorPut start Post wcad put');
+        timeout = setTimeout(async function() { 
+            await StatusUpdate(service, false, false, 'TIMEOUT-PUT');
+            },90000);
         const putResponse = await service.papiClient.post('/wacd/put', body);
+        clearTimeout(timeout);
     }
-    catch (err) { }
+    catch (err) { } //now that the bom bug fixed, we can use the putResponse and add error to the catch
 
     console.log('MonitorAddon, monitorPut start second Get udt');
     const response = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor' AND MainKey='MonitorSyncCounter'" }).toArray();
@@ -133,16 +137,32 @@ export async function MonitorPut(service) {
 };
 
 export async function MonitorSync(service) {
-    let result;
+    let udtResponse;
+    let syncResponse;
+    let statusResponse;
     let object;
-    try{
-        result = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
-        object = result[0];
+    let timeout;
+
+    //first udt
+    try{ 
+        console.log('MonitorAddon, monitorSync start first GET udt');
+        timeout = setTimeout(async function() { 
+            return 'TIMEOUT-GET-UDT';
+            //await StatusUpdate(service, false, false, 'TIMEOUT-GET-UDT');
+            },30000);
+        udtResponse = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
+        clearTimeout(timeout);
+        console.log('MonitorAddon, monitorSync finish first GET udt');
     }
     catch (error){
         return 'GET-UDT-FAILED';
     }
+    finally{
+        clearTimeout(timeout);
+    }
+
     //update values field
+    object = udtResponse[0];
     const count = (parseInt(object.Values[0]) + 1).toString();
     object.Values[0] = count;
 
@@ -183,17 +203,52 @@ export async function MonitorSync(service) {
         "ClientDBUUID": Math.floor(Math.random() * 1000000000).toString()
     };
 
-    const syncResponse = await service.papiClient.post('/application/sync', body);
-    const syncJobUUID = syncResponse.SyncJobUUID;
-    //check if the values field have been updated
-    let statusResponse = await service.papiClient.get('/application/sync/jobinfo/' + syncJobUUID);
-    while (statusResponse.Status == 'SyncStart' || statusResponse.Status == 'New' || statusResponse.Status == 'PutInProgress' ||statusResponse.Status == 'GetInProgress') {
-        await sleep(2000);
+    //sync
+    try{
+        console.log('MonitorAddon, monitorSync start POST sync');
+        timeout = setTimeout(async function() { 
+            return 'TIMEOUT-SYNC';
+            //await StatusUpdate(service, false, false, 'TIMEOUT-SYNC');
+            },180000);
+        syncResponse = await service.papiClient.post('/application/sync', body);
+
+        const syncJobUUID = syncResponse.SyncJobUUID;
+        //check if the values field have been updated
         statusResponse = await service.papiClient.get('/application/sync/jobinfo/' + syncJobUUID);
+        while (statusResponse.Status == 'SyncStart' || statusResponse.Status == 'New' || statusResponse.Status == 'PutInProgress' ||statusResponse.Status == 'GetInProgress') {
+            await sleep(2000);
+            statusResponse = await service.papiClient.get('/application/sync/jobinfo/' + syncJobUUID);
+        }
+        clearTimeout(timeout);
+        console.log('MonitorAddon, monitorSync finish POST sync');
     }
+    catch(error){
+        return 'SYNC-CALL-FAILED';
+    }
+    finally{
+        clearTimeout(timeout);
+    }
+    
     if (statusResponse.Status == 'Done') {
-        const response = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
-        if (response[0].Values[0] == count) {
+        //second udt
+        try{
+            console.log('MonitorAddon, monitorSync start second GET udt');
+            timeout = setTimeout(async function() { 
+                return 'TIMEOUT-GET-UDT';
+                //await StatusUpdate(service, false, false, 'TIMEOUT-GET-UDT');
+                },30000);
+            udtResponse = await service.papiClient.userDefinedTables.iter({ where: "MapDataExternalID='PepperiMonitor'" }).toArray();
+            clearTimeout(timeout);
+            console.log('MonitorAddon, monitorSync start second GET udt');
+        }
+        catch(error){
+            return 'GET-UDT-FAILED';
+        }
+        finally{
+            clearTimeout(timeout);
+        }
+        
+        if (udtResponse[0].Values[0] == count) {
             return 'MONITOR-SUCCESS';
         }
         else {
@@ -447,17 +502,23 @@ async function GetMonitorCronExpression(token, maintenanceWindowHour) {
         let hour = '';
 
         switch(maintenanceWindowHour) {
-            case maintenanceWindowHour=0:
-                hour = "1-23";
+            case 0:
+                hour = "2-22";
                 break;
-            case maintenanceWindowHour=1:
-                hour = "0,2-23";
+            case 1:
+                hour = "3-23";
                 break;
-            case maintenanceWindowHour=22:
-                hour = "0-21,23";
+            case 2:
+                hour = "0,4-23";
                 break;
-            case maintenanceWindowHour=23:
-                hour = "0-22";
+            case 21:
+                hour = "0-19,23";
+                break;
+            case 22:
+                hour = "0-20";
+                break;
+            case 23:
+                hour = "1-21";
                 break;
             default:
                 hour = "0-"+(maintenanceWindowHour-1)+','+(maintenanceWindowHour+1)+"-23";
